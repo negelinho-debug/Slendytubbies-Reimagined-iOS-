@@ -1,0 +1,66 @@
+name: Reimagined iOS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Prepare the offline game
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/reimagined"
+          mkdir -p "$work"
+          unzip -q "$GITHUB_WORKSPACE/reimagined-source.zip" -d "$work"
+          cd "$work"
+
+          python -m pip install Pillow==11.3.0
+          python -u fetch-game.py upstream
+          python prepare-game.py upstream game
+          python resize-textures.py game
+
+          npm install --no-audit --no-fund --no-save three@0.160.0 esbuild@0.25.12
+          node_modules/.bin/esbuild game/js/game.js --bundle --format=iife \
+            --platform=browser --target=safari16.4 --outfile=game/game-bundle.js
+          node --check game/game-bundle.js
+          rm -r game/js
+          cp node_modules/three/LICENSE game/THREE-LICENSE.txt
+
+      - name: Build the IPA
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/reimagined"
+
+          app="$PWD/Payload/Reimagined.app"
+          mkdir -p "$app"
+          cp -R game "$app/Game"
+          cp Info.plist "$app/Info.plist"
+          plutil -lint "$app/Info.plist"
+
+          sdk="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun --sdk iphoneos clang -target arm64-apple-ios16.4 -isysroot "$sdk" \
+            -fobjc-arc Host.m -framework Foundation -framework UIKit \
+            -framework WebKit -o "$app/Reimagined"
+
+          codesign --force --sign - "$app"
+          codesign --verify --strict "$app"
+          zip -qry Reimagined-iOS-0.1.0.ipa Payload
+          unzip -tq Reimagined-iOS-0.1.0.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Reimagined-iOS-EN-RU-UK
+          path: ${{ runner.temp }}/reimagined/Reimagined-iOS-0.1.0.ipa
+          if-no-files-found: error
