@@ -52,7 +52,7 @@ jobs:
           sdk="$(xcrun --sdk iphoneos --show-sdk-path)"
           xcrun --sdk iphoneos clang -target arm64-apple-ios16.4 -isysroot "$sdk" \
             -fobjc-arc Host.m -framework Foundation -framework UIKit \
-            -framework WebKit -o "$app/Reimagined"
+           -framework WebKit -framework CoreGraphics -o "$app/Reimagined"
 
           codesign --force --sign - "$app"
           codesign --verify --strict "$app"
